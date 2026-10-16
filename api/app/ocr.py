@@ -1,13 +1,26 @@
 import os
 import io
 import json
+import shutil
 from typing import List, Dict, Any, Tuple
 from PIL import Image
 
 try:
     import pytesseract
     from pytesseract import Output
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+    tess_path = shutil.which("tesseract")
+    if not tess_path:
+        for fallback_path in [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+            "/usr/bin/tesseract",
+            "/usr/local/bin/tesseract",
+        ]:
+            if os.path.exists(fallback_path):
+                tess_path = fallback_path
+                break
+    if tess_path:
+        pytesseract.pytesseract.tesseract_cmd = tess_path
 except Exception:
     pytesseract = None
 

@@ -1,4 +1,5 @@
 import io
+import uuid
 import pytest
 from PIL import Image, ImageDraw
 from fastapi.testclient import TestClient
@@ -158,16 +159,76 @@ def test_missing_ocr_is_never_safe():
         assert finding["evidence"] == []
 
 
-# 6. Claude structuring validation: rejects nonexistent IDs
-def test_structuring_rejects_invented_ids():
+# 6. Gemini structuring validation: rejects nonexistent IDs
+def test_gemini_structuring_rejects_invented_ids(monkeypatch):
+    class MockResponse:
+        def __init__(self, text):
+            self.text = text
+
+    class MockModels:
+        def generate_content(self, model, contents, **kwargs):
+            # Returns an invented ID 999 that was never in the OCR lines
+            return MockResponse('{"ingredient": [1, 999], "allergen": [2, 888]}')
+
+    class MockClient:
+        def __init__(self, *args, **kwargs):
+            self.models = MockModels()
+
+    import google.genai as genai
+    monkeypatch.setattr(genai, "Client", MockClient)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+
     lines = [
         Line(id=1, text="INGREDIENTS: Organic Oats, Almonds", conf=0.95, x=0.1, y=0.1, w=0.5, h=0.05),
         Line(id=2, text="CONTAINS: Tree nuts", conf=0.95, x=0.1, y=0.2, w=0.5, h=0.05),
     ]
     structured = structure_lines(lines)
+
+    # Valid IDs must be assigned
+    assert structured[0].field == "ingredient"
+    assert structured[1].field == "allergen"
+
+    # Only lines with valid IDs exist
     for l in structured:
-        # Every line has a valid ID that was in the input
         assert l.id in {1, 2}
+        assert l.id not in {999, 888}
+
+
+def test_gemini_structuring_logs_and_falls_back_on_error(monkeypatch):
+    class FailingModels:
+        def generate_content(self, model, contents, **kwargs):
+            raise RuntimeError("Gemini API connection error")
+
+    class FailingClient:
+        def __init__(self, *args, **kwargs):
+            self.models = FailingModels()
+
+    import google.genai as genai
+    monkeypatch.setattr(genai, "Client", FailingClient)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+
+    lines = [
+        Line(id=1, text="INGREDIENTS: Wheat flour, sugar", conf=0.95, x=0.1, y=0.1, w=0.5, h=0.05),
+        Line(id=2, text="CONTAINS: Wheat", conf=0.95, x=0.1, y=0.2, w=0.5, h=0.05),
+    ]
+    # Does not crash; falls back gracefully to heuristic classification
+    structured = structure_lines(lines)
+    assert structured[0].field == "ingredient"
+    assert structured[1].field == "allergen"
+
+
+def test_heuristic_fallback_zero_based_and_case_insensitive():
+    from api.app.structuring import _local_heuristic_structuring
+    # Test 0-based indexing for product_name and case-insensitive allergen matching
+    lines = [
+        Line(id=0, text="Super Crunch Protein Bar", conf=0.95, x=0.1, y=0.05, w=0.5, h=0.05),
+        Line(id=1, text="cOntAinS: soy and peanuts", conf=0.95, x=0.1, y=0.2, w=0.5, h=0.05),
+        Line(id=2, text="allERGen advice: contains wheat", conf=0.95, x=0.1, y=0.3, w=0.5, h=0.05),
+    ]
+    field_ids = _local_heuristic_structuring(lines)
+    assert 0 in field_ids["product_name"]
+    assert 1 in field_ids["allergen"]
+    assert 2 in field_ids["allergen"]
 
 
 # 7. Edge cut-off flags uncertain and asks for manual confirmation
@@ -190,13 +251,87 @@ def test_edge_cut_off_ingredient_asks_confirmation():
     })
     assert res.status_code == 200
     data = res.json()
-    # Edge touching makes ingredient list uncertain, so peanut cannot be ruled out => unknown
     assert data["overall_status"] == "unknown"
     assert "unclear or may be cut off" in data["findings"][0]["reason"]
 
 
-# 8. /explain endpoint produces [AI] tagged explanation
-def test_explain_endpoint_has_ai_tag():
+# 8. /explain endpoint with Gemini: caching and ai_used flag
+def test_explain_gemini_success_and_caching(monkeypatch):
+    class MockResponse:
+        def __init__(self, text):
+            self.text = text
+
+    call_count = {"count": 0}
+
+    class MockModels:
+        def generate_content(self, model, contents, **kwargs):
+            call_count["count"] += 1
+            return MockResponse("This product contains peanut oil which poses an allergy risk.")
+
+    class MockClient:
+        def __init__(self, *args, **kwargs):
+            self.models = MockModels()
+
+    import google.genai as genai
+    monkeypatch.setattr(genai, "Client", MockClient)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+
+    scan = db.create_scan()
+    finding_id = str(uuid.uuid4())
+    db.save_findings(scan["id"], [{
+        "id": finding_id,
+        "result": "conflict_found",
+        "title": "peanut",
+        "rule_detail": "Peanut detected on label",
+        "box_ids": []
+    }])
+
+    # First call: invokes Gemini, caches result in DB, returns ai_used=True
+    res1 = client.post("/explain", json={
+        "finding_id": finding_id,
+        "allergen": "peanut",
+        "rule_detail": "Peanut detected on label",
+        "label_text": "peanut oil"
+    })
+    assert res1.status_code == 200
+    data1 = res1.json()
+    assert data1["ai_used"] is True
+    assert data1["explanation"].startswith("[AI]")
+    assert "peanut oil" in data1["explanation"]
+    assert call_count["count"] == 1
+
+    # Check database cache
+    finding_in_db = db.get_finding(finding_id)
+    assert finding_in_db["ai_explanation"] == data1["explanation"]
+
+    # Second call: returns cached value from DB without calling Gemini again!
+    res2 = client.post("/explain", json={
+        "finding_id": finding_id,
+        "allergen": "peanut",
+        "rule_detail": "Peanut detected on label",
+        "label_text": "peanut oil"
+    })
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["ai_used"] is True
+    assert data2["explanation"] == data1["explanation"]
+    # Call count should still be 1 (served from cache!)
+    assert call_count["count"] == 1
+
+
+def test_explain_gemini_failure_returns_ai_used_false(monkeypatch):
+    class FailingModels:
+        def generate_content(self, model, contents, **kwargs):
+            raise RuntimeError("Gemini quota exceeded")
+
+    class FailingClient:
+        def __init__(self, *args, **kwargs):
+            self.models = FailingModels()
+
+    import google.genai as genai
+    monkeypatch.setattr(genai, "Client", FailingClient)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+
     res = client.post("/explain", json={
         "allergen": "peanut",
         "rule_detail": "Cannot rule out 'peanut': ingredient list is unclear",
@@ -204,7 +339,7 @@ def test_explain_endpoint_has_ai_tag():
     })
     assert res.status_code == 200
     data = res.json()
-    assert "explanation" in data
+    assert data["ai_used"] is False
     assert data["explanation"].startswith("[AI]")
 
 
@@ -218,4 +353,15 @@ def test_get_scan_details():
     assert "scan" in data
     assert "lines" in data
     assert data["scan"]["id"] == scan_id
+
+
+# 10. CORS headers respect ALLOWED_ORIGINS
+def test_cors_allowed_origins():
+    res = client.options("/health", headers={
+        "Origin": "http://localhost:3000",
+        "Access-Control-Request-Method": "GET"
+    })
+    assert res.status_code == 200
+    assert res.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
 

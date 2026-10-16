@@ -55,7 +55,7 @@ create table scan_boxes (
   id uuid primary key default gen_random_uuid(),
   scan_id uuid not null references scans(id) on delete cascade,
   user_id uuid not null references profiles(id) on delete cascade, -- denormalized for cheap RLS
-  line_no int not null,                              -- the "id" sent to Claude
+  line_no int not null,                              -- the "id" sent to Gemini
   text text not null,
   ocr_confidence real check (ocr_confidence between 0 and 1),
   x real not null check (x between 0 and 1),

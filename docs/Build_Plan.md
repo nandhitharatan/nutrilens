@@ -8,7 +8,7 @@ Monorepo with /web (Next.js 14, TypeScript, Tailwind) and /api (FastAPI).
 
 Install the deps from the Tech Stack doc. Add the Tailwind design tokens (Parchment, Oxblood, Ink, Gold) and fonts.
 
-Create the Supabase, Google Cloud Vision and Anthropic projects.
+Create the Supabase, Google Cloud Vision and Google Gemini projects.
 
 Add .env.example files with names only. Add .env to .gitignore.
 
@@ -50,7 +50,7 @@ Error states: blurry, no text, offline.
 
 Phase 5: Core Feature 2, Analyze, Highlight and Results
 
-Claude structuring: send line ids, get back ids per field, "unknown" by default. Validate that every returned id exists.
+Google Gemini structuring: send line ids, get back ids per field, "unknown" by default. Validate that every returned id exists.
 
 Rule engine in pure Python, test-first with pytest: allergens, vegan / non-vegan / unknown, thresholds. Missing data always gives Unknown.
 

@@ -196,4 +196,24 @@ class DBStore:
                 out.append(d)
             return out
 
+    def get_finding(self, finding_id: str) -> Optional[Dict[str, Any]]:
+        import json
+        with self._get_conn() as conn:
+            cur = conn.execute("SELECT * FROM findings WHERE id = ?", (finding_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            try:
+                d["box_ids"] = json.loads(d["box_ids"])
+            except Exception:
+                d["box_ids"] = []
+            return d
+
+    def update_finding_explanation(self, finding_id: str, ai_explanation: str) -> Optional[Dict[str, Any]]:
+        with self._get_conn() as conn:
+            conn.execute("UPDATE findings SET ai_explanation = ? WHERE id = ?", (ai_explanation, finding_id))
+            conn.commit()
+        return self.get_finding(finding_id)
+
 db = DBStore()

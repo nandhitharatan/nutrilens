@@ -1,5 +1,6 @@
 import os
 import uuid
+import logging
 from typing import List, Dict, Any, Optional, Union
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,12 +16,19 @@ from .ocr import run_ocr
 from .structuring import structure_lines
 from .db import db
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Nutrilens API", version="1.0.0")
 
-# CORS setup
+# CORS setup with ALLOWED_ORIGINS
+allowed_origins_raw = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+allowed_origins = [o.strip() for o in allowed_origins_raw.split(",") if o.strip()]
+if not allowed_origins:
+    allowed_origins = ["http://localhost:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -322,29 +330,56 @@ async def explain_finding(payload: ExplainRequest):
     Generates a plain-language explanation for one finding, labeled with [AI].
     AI text is only for explanations and carries an 'AI' tag.
     Rule engine remains strictly plain Python.
+    Caches the explanation in findings.ai_explanation and returns cached result on repeat calls.
+    Returns { explanation: str, ai_used: bool }.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+    # 1. Return cached explanation on repeat calls
+    if payload.finding_id:
+        existing = db.get_finding(payload.finding_id)
+        if existing and existing.get("ai_explanation"):
+            return {
+                "explanation": existing["ai_explanation"],
+                "ai_used": True
+            }
+
+    api_key = os.getenv("GEMINI_API_KEY")
     if api_key:
         try:
-            import anthropic
-            client = anthropic.Anthropic(api_key=api_key)
+            from google import genai
+
+            client = genai.Client(api_key=api_key)
+            model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
             prompt = f"""Explain this food label safety flag simply in 1-2 concise sentences for a consumer:
 Allergen: {payload.allergen}
 Finding: {payload.rule_detail}
 Matched label text: {payload.label_text or 'None'}
 
 Be honest, direct, and remind the user this is not medical advice."""
-            response = client.messages.create(
-                model="claude-3-5-haiku-20241022",
-                max_tokens=150,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            explanation = response.content[0].text.strip()
-            return {"explanation": f"[AI] {explanation}"}
-        except Exception:
-            pass
 
-    # Fallback explanation
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt
+            )
+            raw_text = (response.text or "").strip()
+            explanation = f"[AI] {raw_text}"
+
+            # Cache in findings database
+            if payload.finding_id:
+                db.update_finding_explanation(payload.finding_id, explanation)
+
+            return {
+                "explanation": explanation,
+                "ai_used": True
+            }
+        except Exception as exc:
+            logger.error("Gemini explain call failed: %s", exc, exc_info=True)
+            return {
+                "explanation": f"[AI] Nutrilens flagged '{payload.allergen}' because {payload.rule_detail.lower()}. Always check packaging directly if uncertain.",
+                "ai_used": False
+            }
+
+    # Fallback explanation when no API key is provided
     return {
-        "explanation": f"[AI] Nutrilens flagged '{payload.allergen}' because {payload.rule_detail.lower()}. Always check packaging directly if uncertain."
+        "explanation": f"[AI] Nutrilens flagged '{payload.allergen}' because {payload.rule_detail.lower()}. Always check packaging directly if uncertain.",
+        "ai_used": False
     }

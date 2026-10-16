@@ -390,7 +390,7 @@ function ResultsContent() {
                         handleRequestAiExplain(f);
                       }}
                       className="px-2.5 py-1 text-[11px] font-mono rounded border border-ink-border hover:bg-parchment-dark transition-colors flex items-center gap-1 text-ink-muted hover:text-ink disabled:opacity-60"
-                      title="Generate plain-language explanation with Claude"
+                      title="Generate plain-language explanation with Google Gemini"
                     >
                       {isAiLoading ? (
                         <RefreshCw className="w-3 h-3 animate-spin text-oxblood" />
@@ -453,7 +453,7 @@ function ResultsContent() {
                     <div className="mt-3 p-2.5 bg-parchment-dark border border-ink-border rounded text-xs leading-relaxed text-ink flex flex-col gap-1">
                       <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold text-oxblood">
                         <Sparkles className="w-3 h-3 text-oxblood" />
-                        <span>AI EXPLANATION (Claude)</span>
+                        <span>AI EXPLANATION (Google Gemini)</span>
                       </div>
                       <p className="font-mono text-ink-muted text-[11px]">
                         {aiExplanations[f.id]}

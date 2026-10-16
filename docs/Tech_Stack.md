@@ -2,7 +2,7 @@ Nutrilens: Tech Stack
 
 Oct 16, 2026 · @nandhitha
 
-The stack is built around the signature feature: the real label photo with SVG highlights on top. Next.js and Tailwind carry the design system, Google Cloud Vision supplies text with exact coordinates, Claude structures and explains, and a plain Python rule engine makes every safety decision.
+The stack is built around the signature feature: the real label photo with SVG highlights on top. Next.js and Tailwind carry the design system, Google Cloud Vision supplies text with exact coordinates, Google Gemini structures and explains, and a plain Python rule engine makes every safety decision.
 
 1. Frontend
 
@@ -36,11 +36,11 @@ The layers:
 
 OCR: Google Cloud Vision reads the photo and returns each line with its box and confidence.
 
-Structuring: Claude gets the OCR lines (each with an id) and returns which ids are ingredients, allergens, sugar, sodium, protein and serving size. It returns ids only, never coordinates, so every box comes from the OCR engine.
+Structuring: Google Gemini gets the OCR lines (each with an id) and returns which ids are ingredients, allergens, sugar, sodium, protein and serving size. It returns ids only, never coordinates, so every box comes from the OCR engine.
 
 Rule engine: plain Python with no AI. It decides No known conflict, Conflict found or Unknown.
 
-Explanations: Claude writes a plain-language explanation from the extracted text and the rule result only, shown with an "AI" tag.
+Explanations: Google Gemini writes a plain-language explanation from the extracted text and the rule result only, shown with an "AI" tag.
 
 Main endpoints in v1:
 
@@ -120,7 +120,7 @@ Free monthly allowance, then paid per image
 
 v1
 
-gemini api 
+Google Gemini (google-genai)
 
 Structures OCR lines into fields and writes plain-language explanations
 
@@ -152,13 +152,13 @@ Free, open data
 
 v2
 
-Decision on label reading: Google Cloud Vision for OCR, Claude for structuring and explaining.
+Decision on label reading: Google Cloud Vision for OCR, Google Gemini for structuring and explaining.
 
-Why not Claude alone: the brief needs precise bounding boxes, and a vision model's coordinates are not reliable enough. An OCR engine measures them.
+Why not Gemini alone: the brief needs precise bounding boxes, and a vision model's coordinates are not reliable enough. An OCR engine measures them.
 
 Why not Tesseract: it is free, but weaker on curved, glossy and angled packaging. Keep it only as a free fallback for local development.
 
-Claude models: Claude Sonnet 5.5 (claude-sonnet-5-5) for structuring in v1, and Claude Haiku 5.5 (claude-haiku-5-5) for explanations and the v2 chatbot to keep costs low.
+Gemini models: Gemini Flash (gemini-2.5-flash) for structuring and explanations to keep latency and costs low.
 
 Prompt rules: return "unknown" for any field not found, and return only line ids that exist. The backend checks every id before using it.
 
@@ -196,7 +196,7 @@ Pydantic: defines the label data shape and checks every field.
 
 google-cloud-vision: OCR client.
 
-anthropic (Python SDK): calls the Claude API.
+google-genai (Python SDK): calls the Google Gemini API.
 
 OpenCV (headless): blur detection, plus basic straightening and contrast fixes before OCR.
 
@@ -236,11 +236,17 @@ Frontend (Vercel)
 
 No
 
-ANTHROPIC_API_KEY
+GEMINI_API_KEY
 
 Backend (Render)
 
 Yes
+
+GEMINI_MODEL
+
+Backend (Render)
+
+No (default: gemini-2.5-flash)
 
 GOOGLE_CREDENTIALS_JSON
 

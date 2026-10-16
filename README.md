@@ -5,7 +5,7 @@ Nutrilens is a responsive web application that inspects packaged-food label phot
 ## Key Principles & Guarantees
 1. **Unknown is never safe:** Missing, unreadable, or low-confidence data is strictly evaluated as **Unknown**, never safe.
 2. **Every flag shows exact proof:** Findings link to real OCR bounding boxes with fractional coordinates `(x, y, w, h)` on the packaging photo, tagged `confirmed`, `uncertain`, or `user_confirmed`.
-3. **No invented label information:** Claude only structures OCR line IDs (`ingredient`, `allergen`, `nutrition`, `serving_size`, `product_name`). The backend validates and strictly rejects any ID that was not in the original OCR output.
+3. **No invented label information:** Google Gemini only structures OCR line IDs (`ingredient`, `allergen`, `nutrition`, `serving_size`, `product_name`). The backend validates and strictly rejects any ID that was not in the original OCR output.
 4. **Pure Python safety engine:** All allergen evaluations, edge cut-off checks, and overall safety determinations run deterministically in Python via `label_safety.py`. AI text is used solely for optional explanations tagged `[AI]`.
 5. **Human in the loop:** Users can correct OCR mistakes on `/scan/review` and re-run rules instantly.
 6. **Design tokens:** Light mode only, styled with Parchment (`#F1EDE4`), Oxblood (`#A23B32`), Ink (`#26231F`), and Gold (`#E3B95B`). No green or purple is used anywhere.
@@ -20,7 +20,7 @@ missionathon/
 │   │   ├── label_safety.py     # Core quality checks & safety rule engine
 │   │   ├── db.py               # Database layer (SQLite & Supabase support)
 │   │   ├── ocr.py              # Google Cloud Vision & local Tesseract OCR
-│   │   ├── structuring.py      # Claude field structuring with strict ID validation
+│   │   ├── structuring.py      # Google Gemini field structuring with strict ID validation
 │   │   └── main.py             # FastAPI endpoints (/scan, /confirm, /analyze, /explain)
 │   └── tests/
 │       ├── test_label_safety.py # Original 12 core safety tests
@@ -71,5 +71,5 @@ All 23 tests pass:
 - Missing OCR output evaluates to `Unknown`, never safe
 - Edge cut-off detection (`touches_edge` triggers manual confirmation)
 - User corrections updating lines to `user_confirmed` and re-analyzing status
-- Claude structuring strictly rejecting invented or non-existent line IDs
+- Google Gemini structuring strictly rejecting invented or non-existent line IDs
 - AI explanation tags (`[AI]`)

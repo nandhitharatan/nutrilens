@@ -2,6 +2,14 @@ import os
 import uuid
 import logging
 from typing import List, Dict, Any, Optional, Union
+from dotenv import load_dotenv, find_dotenv
+
+# Load environment variables from .env if present
+load_dotenv(find_dotenv(usecwd=True))
+_root_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+if os.path.exists(_root_env):
+    load_dotenv(_root_env)
+
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
